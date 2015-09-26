@@ -18,6 +18,7 @@ extern "C" void register_field_(int * instance_id, void * data_buf, int * data_s
 
 extern "C" void register_mask_(int * instance_id, bool * mask)
 {
+    data_transfer_instance_mgt->register_mask(*instance_id, mask);
 }
 
 extern "C" void init_instance_(int * instance_id)

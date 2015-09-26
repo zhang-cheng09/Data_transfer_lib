@@ -130,6 +130,8 @@ bool Data_transfer_instance::register_field(void * data_buf, int buf_size, char 
     //else output_coupling_fields.push_back(field_info);
     field_info->input = input;
     coupling_fields.push_back(field_info);
+    if(input) num_input_fields++;
+    else num_output_fields++;
 
     return true;
 }
@@ -227,7 +229,7 @@ bool Data_transfer_instance::init()
     }
 
     butterfly_instance = new Butterfly(MPI_COMM_WORLD, local_comm, remote_procs_global_rank, send_cells, recv_cells, remote_model_size, direction);
-    
+
     //if(direction == SEND && (output_coupling_fields.size() > 0 || input_coupling_fields.size() == 0) ) return false;
     //if(direction == RECV && (input_coupling_fields.size() > 0 || output_coupling_fields.size() == 0) ) return false;
     //if(direction == SENDRECV && (input_coupling_fields.size() == 0 || output_coupling_fields.size() == 0) ) return false;
@@ -579,19 +581,18 @@ bool Data_transfer_instance::exec()
     if(direction != RECV)
     {
         for(int i=0; i<coupling_fields.size(); i++)
-            if(coupling_fields[i]->input)
+            if(coupling_fields[i]->input && (mask == NULL || mask[i]))
                 fields_per_cell += coupling_fields[i]->buf_size / num_local_cells * coupling_fields[i]->data_type;
     }
     else
     {
         for(int i=0; i<coupling_fields.size(); i++)
-            if(!coupling_fields[i]->input)
+            if(!coupling_fields[i]->input && (mask == NULL || mask[i]))
                 fields_per_cell += coupling_fields[i]->buf_size / num_local_cells * coupling_fields[i]->data_type;
     }
 
     butterfly_instance->execute(send_data_buf, recv_data_buf, fields_per_cell);
     unpack_MD_data();
-    
     return true;
 }
 
@@ -629,9 +630,10 @@ void Data_transfer_instance::pack_MD_data()
             int num_segments = routing_info_mgt[i].num_local_indx_segments;
             for(int j=0; j<coupling_fields.size(); j++)
             {
-                if(coupling_fields[j]->input)
+                if(coupling_fields[j]->input && (mask == NULL || mask[j]))
                 {
                     int num_lev = coupling_fields[j]->buf_size / num_local_cells;
+                    
                     for(int k=0; k<num_segments; k++)
                     {
                         switch(coupling_fields[j]->data_type){
@@ -656,7 +658,6 @@ void Data_transfer_instance::pack_MD_data()
                 }
             }
         }
-    
 }
 
 void Data_transfer_instance::unpack_MD_data()
@@ -675,7 +676,7 @@ void Data_transfer_instance::unpack_MD_data()
             int num_segments = routing_info_mgt[i+tmp_routing_index].num_local_indx_segments;
             for(int j=0; j<coupling_fields.size(); j++)
             {
-                if(!coupling_fields[j]->input)
+                if(!coupling_fields[j]->input && (mask == NULL || mask[j]))
                 {
                     int num_lev = coupling_fields[j]->buf_size / tmp_local_cells;
                     for(int k=0; k<num_segments; k++)
