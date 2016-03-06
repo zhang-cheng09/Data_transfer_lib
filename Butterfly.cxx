@@ -1592,12 +1592,6 @@ void Butterfly::execute(char * send_data, char * recv_data, int fields_per_cell)
                 else best_stage_num[index] ++;
             }
 
-            if(global_rank == 0){
-                for(int i=0; i<butterfly_stage_num; i++)
-                    printf("%d ", best_stage_num[i]);
-                printf("\n");
-            }
-
             reset_p2p_stage_num(best_stage_num);
         }
 
@@ -1626,12 +1620,6 @@ void Butterfly::execute(char * send_data, char * recv_data, int fields_per_cell)
                     best_stage_num[index] = 1;
                 }
                 else best_stage_num[index] ++;
-            }
-
-            if(global_rank == 0){
-                for(int i=0; i<butterfly_stage_num; i++)
-                    printf("%d ", best_stage_num[i]);
-                printf("\n");
             }
 
             reset_p2p_stage_num(best_stage_num);
@@ -1671,8 +1659,6 @@ int * Butterfly:: auto_set_p2p_stage_num(char * send_data, char * recv_data, int
     int best_p2p_stage_num[butterfly_stage_num], cur_p2p_stage_num;
     bool best_p2p_stage_mask[butterfly_stage_num];
 
-    if(global_rank == 0) printf("Auto Set\n");
-    
     profiling = false;
     for(int i=0; i<butterfly_stage_num; i++)
     {
@@ -1719,12 +1705,6 @@ int * Butterfly:: auto_set_p2p_stage_num(char * send_data, char * recv_data, int
         if(max_timer < best_timer) best_timer = max_timer;
         else best_p2p_stage_mask[i] = true;
 
-        if(global_rank == 0)
-        {
-            for(int i=0; i<butterfly_stage_num; i++)
-                printf("%d ",best_p2p_stage_num[i]);
-            printf("\n");
-        }
     }
 
     memset(best_p2p_stage_num, 0, sizeof(int)*butterfly_stage_num);
@@ -1739,13 +1719,6 @@ int * Butterfly:: auto_set_p2p_stage_num(char * send_data, char * recv_data, int
         }
         else
             best_p2p_stage_num[index] ++;
-    }
-
-    if(global_rank == 0)
-    {
-        for(int i=0; i<butterfly_stage_num; i++)
-            printf("%d ",best_p2p_stage_num[i]);
-        printf("\n");
     }
 
     reset_p2p_stage_num(best_p2p_stage_num);
