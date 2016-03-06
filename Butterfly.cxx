@@ -1,3 +1,11 @@
+
+/***************************************************************************
+ * This is a source file of the Adaptive Data Transfer Library version 1.0
+ * This file was initially finished by Cheng Zhang
+ * If you have any problem,
+ * please contact Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn
+ **************************************************************************/
+
 #include <mpi.h>
 #include "Butterfly.h"
 #include <cstring>
@@ -114,6 +122,8 @@ Butterfly::~Butterfly()
     if(first_p2p_send_mask_cells != NULL) delete [] first_p2p_send_mask_cells;
     if(first_p2p_send_proc_index != NULL) delete [] first_p2p_send_proc_index;
     if(first_p2p_recv_proc_index != NULL) delete [] first_p2p_recv_proc_index;
+
+    delete [] stage_mask;
 }
 
 void Butterfly::reset_p2p_stage_num(int * stage_num)
@@ -467,11 +477,21 @@ void Butterfly::last_p2p_init()
     MPI_Status status;
 
     int * local_data_decompositions = NULL;
-    int * tmp_send_model_list;
+    int * tmp_send_model_list, * all_send_model_list;
+    int * global_rank_intra_comm;
+    tmp_send_model_list = new int[send_model_size];
+    if(action == SENDRECV) {
+        all_send_model_list = new int[send_model_size*send_model_size];
+        global_rank_intra_comm = new int[send_model_size];
+    }
+    else {
+        all_send_model_list = new int[send_model_size * (send_model_size + recv_model_size)];
+        global_rank_intra_comm = new int[send_model_size + recv_model_size];
+    }
+      
     if(butterfly_node_master && (butterfly_grp_index == 0))
     {
         int tmp_send_model_size = (int)exp2f(butterfly_stage_num - last_p2p_stage_num);
-        tmp_send_model_list = new int[send_model_size];
         for(int i=0; i<send_model_size; i++)
             tmp_send_model_list[i] = MPI_PROC_NULL;
 
@@ -510,9 +530,9 @@ void Butterfly::last_p2p_init()
             }
         }
 
-        send_req = new MPI_Request[last_p2p_send_to_remote_procs.size()];
-        for(int i=0; i<last_p2p_send_to_remote_procs.size(); i++)
-            MPI_Isend(tmp_send_model_list, send_model_size, MPI_INT, last_p2p_send_to_remote_procs[i], 3200+last_p2p_send_to_remote_procs[i], global_comm, send_req+i);
+        //send_req = new MPI_Request[last_p2p_send_to_remote_procs.size()];
+        //for(int i=0; i<last_p2p_send_to_remote_procs.size(); i++)
+        //    MPI_Isend(tmp_send_model_list, send_model_size, MPI_INT, last_p2p_send_to_remote_procs[i], 3200+last_p2p_send_to_remote_procs[i], global_comm, send_req+i);
         
         last_p2p_send_cells = new int[last_p2p_send_to_remote_procs.size()];
         last_p2p_send_displs = new int[last_p2p_send_to_remote_procs.size()];
@@ -531,7 +551,7 @@ void Butterfly::last_p2p_init()
                     for(int m=0; m<send_model_size; m++)
                     {
                         int tmp_send_proc = tmp_send_model_list[m];
-                        if(tmp_send_proc != -1)
+                        if(tmp_send_proc != MPI_PROC_NULL)
                             last_p2p_send_cells[tmp_index] += total_recv_cells[tmp_recv_proc*send_model_size+tmp_send_proc];
                     }
                     p2p_recv_proc_local_rank[tmp_index] = tmp_recv_proc;
@@ -546,7 +566,7 @@ void Butterfly::last_p2p_init()
         for(int i=0; i<send_model_size; i++)
         {
             int tmp_send_proc = tmp_send_model_list[i];
-            if(tmp_send_proc != -1)
+            if(tmp_send_proc != MPI_PROC_NULL)
             {
                 for(int j=0; j<recv_model_size; j++)
                 {
@@ -572,6 +592,9 @@ void Butterfly::last_p2p_init()
         delete [] p2p_recv_proc_local_rank;
     }
 
+    MPI_Allgather(&global_rank, 1, MPI_INT, global_rank_intra_comm, 1, MPI_INT, intra_comm);
+    MPI_Allgather(tmp_send_model_list, send_model_size, MPI_INT, all_send_model_list, send_model_size, MPI_INT, intra_comm);
+
     if(is_recv)
     {
         int tmp_send_model_size = (int)exp2f(last_p2p_stage_num);
@@ -588,11 +611,26 @@ void Butterfly::last_p2p_init()
         }
         last_p2p_send_model_proc_lists = new int[send_model_size * last_p2p_recv_from_remote_procs.size()];
 
-        recv_req = new MPI_Request[last_p2p_recv_from_remote_procs.size()];
+        //recv_req = new MPI_Request[last_p2p_recv_from_remote_procs.size()];
+        //for(int i=0; i<last_p2p_recv_from_remote_procs.size(); i++)
+        //    MPI_Irecv(last_p2p_send_model_proc_lists+i*send_model_size, send_model_size, MPI_INT, last_p2p_recv_from_remote_procs[i], 3200+global_rank, global_comm, recv_req+i);
+        
         for(int i=0; i<last_p2p_recv_from_remote_procs.size(); i++)
-            MPI_Irecv(last_p2p_send_model_proc_lists+i*send_model_size, send_model_size, MPI_INT, last_p2p_recv_from_remote_procs[i], 3200+global_rank, global_comm, recv_req+i);
+        {
+            int index = 0;
+            while(true)
+            {
+                if(global_rank_intra_comm[index] == last_p2p_recv_from_remote_procs[i])
+                {
+                    memcpy(last_p2p_send_model_proc_lists+i*send_model_size, all_send_model_list+index*send_model_size, sizeof(int)*send_model_size);
+                    break;
+                }
+                index ++;
+            }
+        }
     }
 
+    /*
     if(butterfly_node_master && (butterfly_grp_index == 0))
     {
         for(int i=0; i<last_p2p_send_to_remote_procs.size(); i++)
@@ -600,21 +638,24 @@ void Butterfly::last_p2p_init()
         delete [] send_req;
         delete [] tmp_send_model_list;
     }
+    */
 
     if(is_recv)
     {
         last_p2p_recv_cells = new int[last_p2p_recv_from_remote_procs.size()];
         memset(last_p2p_recv_cells, 0, sizeof(int)*last_p2p_recv_from_remote_procs.size());
+        /*
         for(int i=0; i<last_p2p_recv_from_remote_procs.size(); i++)
             MPI_Wait(recv_req+i, &status);
         delete [] recv_req;
+        */
 
         for(int i=0; i<last_p2p_recv_from_remote_procs.size(); i++)
         {
             for(int j=0; j<send_model_size; j++)
             {
                 int tmp_send_proc = last_p2p_send_model_proc_lists[i*send_model_size+j];
-                if(tmp_send_proc != -1)
+                if(tmp_send_proc != MPI_PROC_NULL)
                     last_p2p_recv_cells[i] += total_recv_cells[local_rank*send_model_size+tmp_send_proc];
                 last_p2p_recv_buf_cells += last_p2p_recv_cells[i];
             }
@@ -633,6 +674,9 @@ void Butterfly::last_p2p_init()
     }
 
     if (local_data_decompositions != NULL) delete [] local_data_decompositions;
+    delete [] tmp_send_model_list;
+    delete [] all_send_model_list;
+    delete [] global_rank_intra_comm;
 }
 
 void Butterfly::last_p2p_execute(char * recv_data)
@@ -708,7 +752,7 @@ void Butterfly::last_p2p_execute(char * recv_data)
             for(int j=0; j<send_model_size; j++)
             {
                 int tmp_send_proc = last_p2p_send_model_proc_lists[i*send_model_size+j];
-                if(tmp_send_proc != -1)
+                if(tmp_send_proc != MPI_PROC_NULL)
                 {
                     memcpy(recv_data+intra_proc_displs[tmp_send_proc], last_p2p_recv_buf+tmp_displs, sizeof(char)*fields_per_cell*total_recv_cells[local_rank*send_model_size+tmp_send_proc]);
                     tmp_displs += total_recv_cells[local_rank*send_model_size+tmp_send_proc] * fields_per_cell;
@@ -732,6 +776,24 @@ void Butterfly::butterfly_init()
 {
     butterfly_stage_num = (int)log2f(butterfly_grp_node_num);
     
+    MPI_Comm inter_comm;
+
+    if(action == SENDRECV) intra_comm = local_comm;
+    else if(action == SEND){
+        MPI_Intercomm_create(local_comm, 0, global_comm, recv_model_global_rank[0], 1000, &inter_comm);
+        MPI_Intercomm_merge(inter_comm, true, &intra_comm);
+    }
+    else{
+        MPI_Intercomm_create(local_comm, 0, global_comm, send_model_global_rank[0], 1000, &inter_comm);
+        MPI_Intercomm_merge(inter_comm, true, &intra_comm);
+    }
+    best_timer = -1.0;
+    profiling = true;
+    current_stage = 0;
+    stage_mask = new bool[butterfly_stage_num];
+    for(int i = 0; i < butterfly_stage_num; i ++)
+        stage_mask[i] = true;
+
     recv_proc_node_index = new int[recv_model_size];
 
     MPI_Status status;
@@ -1509,9 +1571,79 @@ void Butterfly::intra_node_gather_init(MPI_Comm global_comm, MPI_Comm local_comm
 void Butterfly::execute(char * send_data, char * recv_data, int fields_per_cell)
 {
     this->fields_per_cell = fields_per_cell;
-    first_p2p_execute(send_data, recv_data);
-    butterfly_p2p_execute();
-    last_p2p_execute(recv_data);
+    
+    if(profiling)
+    {
+        double tstart, tend, current_timer, max_timer;
+        int best_stage_num[butterfly_stage_num];
+        memset(best_stage_num, 0, sizeof(int) * butterfly_stage_num);
+        if(current_stage != 0)
+        {
+            int index = 0;
+            stage_mask[current_stage] = false;
+            best_stage_num[index] = 1;
+            for(int i = 1; i < butterfly_stage_num; i++)
+            {
+                if(stage_mask[i])
+                {
+                    index ++;
+                    best_stage_num[index] = 1;
+                }
+                else best_stage_num[index] ++;
+            }
+
+            if(global_rank == 0){
+                for(int i=0; i<butterfly_stage_num; i++)
+                    printf("%d ", best_stage_num[i]);
+                printf("\n");
+            }
+
+            reset_p2p_stage_num(best_stage_num);
+        }
+
+        MPI_Barrier(intra_comm);
+        wtime(&tstart);
+        first_p2p_execute(send_data, recv_data);
+        butterfly_p2p_execute();
+        last_p2p_execute(recv_data);
+        wtime(&tend);
+        current_timer = tend - tstart;
+        MPI_Allreduce(&current_timer, &max_timer, 1, MPI_DOUBLE, MPI_MAX, intra_comm);
+        if(current_stage == 0) best_timer = max_timer;
+        else if(max_timer < best_timer) best_timer = max_timer;
+        else stage_mask[current_stage] = true;
+
+        current_stage ++;
+        if(current_stage >= butterfly_stage_num)
+        {
+            int index = 0;
+            best_stage_num[index] = 1;
+            for(int i = 1; i < butterfly_stage_num; i++)
+            {
+                if(stage_mask[i])
+                {
+                    index ++;
+                    best_stage_num[index] = 1;
+                }
+                else best_stage_num[index] ++;
+            }
+
+            if(global_rank == 0){
+                for(int i=0; i<butterfly_stage_num; i++)
+                    printf("%d ", best_stage_num[i]);
+                printf("\n");
+            }
+
+            reset_p2p_stage_num(best_stage_num);
+            profiling = false;
+        }
+    }
+    else
+    {
+        first_p2p_execute(send_data, recv_data);
+        butterfly_p2p_execute();
+        last_p2p_execute(recv_data);
+    }
 }
 
 void Butterfly:: decrease_sort(int * data, int * index, int size)
@@ -1535,90 +1667,88 @@ void Butterfly:: decrease_sort(int * data, int * index, int size)
 
 int * Butterfly:: auto_set_p2p_stage_num(char * send_data, char * recv_data, int fields_per_cell)
 {
-    MPI_Comm inter_comm, intra_comm;
     double tstart, tend, best_timer, cur_timer, temp_timer, max_timer;
     int best_p2p_stage_num[butterfly_stage_num], cur_p2p_stage_num;
-    int total_p2p_stage_num_tested = 0, cur_p2p_stage_tested = 0, best_p2p_stage_num_tested = 0, left_p2p_stage_num_tested = 0;
-    int tmp_p2p_stage_num[butterfly_stage_num];
- 
-    if(action == SENDRECV) intra_comm = local_comm;
-    else if(action == SEND){
-        MPI_Intercomm_create(local_comm, 0, global_comm, recv_model_global_rank[0], 1000, &inter_comm);
-        MPI_Intercomm_merge(inter_comm, true, &intra_comm);
-    }
-    else{
-        MPI_Intercomm_create(local_comm, 0, global_comm, send_model_global_rank[0], 1000, &inter_comm);
-        MPI_Intercomm_merge(inter_comm, true, &intra_comm);
-    }
+    bool best_p2p_stage_mask[butterfly_stage_num];
 
+    if(global_rank == 0) printf("Auto Set\n");
+    
+    profiling = false;
     for(int i=0; i<butterfly_stage_num; i++)
     {
         best_p2p_stage_num[i] = 1;
-        tmp_p2p_stage_num[i] = 1;
+        best_p2p_stage_mask[i] = true;
     }
+
     reset_p2p_stage_num(best_p2p_stage_num);
-    best_timer = 0;
-    //for(int i=0; i<10; i++)
+    MPI_Barrier(intra_comm);
+    wtime(&tstart);
+    execute(send_data, recv_data, fields_per_cell);
+    wtime(&tend);
+    temp_timer = tend-tstart;
+    MPI_Allreduce(&temp_timer, &max_timer, 1, MPI_DOUBLE, MPI_MAX, intra_comm);
+    best_timer = max_timer;
+
+    int index;
+    for(int i=1; i<butterfly_stage_num; i++)
     {
+        memset(best_p2p_stage_num, 0, sizeof(int)*butterfly_stage_num);
+        best_p2p_stage_mask[i] = false;
+        index = 0;
+        best_p2p_stage_num[index] = 1;
+        for(int j=1; j<butterfly_stage_num; j++)
+        {
+            if(best_p2p_stage_mask[j])
+            {
+                index ++;
+                best_p2p_stage_num[index] = 1;
+            }
+            else
+            {
+                best_p2p_stage_num[index] ++;
+            }
+        }
+
+        reset_p2p_stage_num(best_p2p_stage_num);
         MPI_Barrier(intra_comm);
         wtime(&tstart);
         execute(send_data, recv_data, fields_per_cell);
         wtime(&tend);
         temp_timer = tend-tstart;
         MPI_Allreduce(&temp_timer, &max_timer, 1, MPI_DOUBLE, MPI_MAX, intra_comm);
-        best_timer += max_timer;
-    }
+        if(max_timer < best_timer) best_timer = max_timer;
+        else best_p2p_stage_mask[i] = true;
 
-    cur_p2p_stage_tested = butterfly_stage_num - 1;
-    while(total_p2p_stage_num_tested < butterfly_stage_num)
-    {
-        best_p2p_stage_num_tested = 1;
-        left_p2p_stage_num_tested = butterfly_stage_num - total_p2p_stage_num_tested;
-        for(cur_p2p_stage_num = left_p2p_stage_num_tested; cur_p2p_stage_num > 1; cur_p2p_stage_num--)
+        if(global_rank == 0)
         {
-            tmp_p2p_stage_num[cur_p2p_stage_tested] = cur_p2p_stage_num;
-
-            int tmp_sum = 0, i;
-            for(i = butterfly_stage_num - 1; i >= 0; i--){
-                tmp_sum += tmp_p2p_stage_num[i];
-                if(tmp_sum == butterfly_stage_num)
-                    break;
-            }
-            for(int j=i; j<butterfly_stage_num; j++)
-              best_p2p_stage_num[j-i] = tmp_p2p_stage_num[j];
-
-            reset_p2p_stage_num(best_p2p_stage_num);
-            cur_timer = 0;
-            //for(int i=0; i<10; i++)
-            {
-                MPI_Barrier(intra_comm);
-                wtime(&tstart);
-                execute(send_data, recv_data, fields_per_cell);
-                wtime(&tend);
-                temp_timer = tend-tstart;
-                MPI_Allreduce(&temp_timer, &max_timer, 1, MPI_DOUBLE, MPI_MAX, intra_comm);
-                cur_timer += max_timer;
-            }
-            if(cur_timer < best_timer){
-                best_timer = cur_timer;
-                best_p2p_stage_num_tested = cur_p2p_stage_num;
-            }
+            for(int i=0; i<butterfly_stage_num; i++)
+                printf("%d ",best_p2p_stage_num[i]);
+            printf("\n");
         }
-
-        tmp_p2p_stage_num[cur_p2p_stage_tested] = best_p2p_stage_num_tested;
-        total_p2p_stage_num_tested += best_p2p_stage_num_tested;
-        cur_p2p_stage_tested --;
     }
 
-    int tmp_sum = 0, i;
-    for(i = butterfly_stage_num - 1; i >= 0; i--){
-        tmp_sum += tmp_p2p_stage_num[i];
-        if(tmp_sum == butterfly_stage_num)
-            break;
+    memset(best_p2p_stage_num, 0, sizeof(int)*butterfly_stage_num);
+    index = 0;
+    best_p2p_stage_num[index] = 1;
+    for(int i=1; i<butterfly_stage_num; i++)
+    {
+        if(best_p2p_stage_mask[i])
+        {
+            index ++;
+            best_p2p_stage_num[index] = 1;
+        }
+        else
+            best_p2p_stage_num[index] ++;
     }
-    for(int j=i; j<butterfly_stage_num; j++)
-        best_p2p_stage_num[j-i] = tmp_p2p_stage_num[j];
+
+    if(global_rank == 0)
+    {
+        for(int i=0; i<butterfly_stage_num; i++)
+            printf("%d ",best_p2p_stage_num[i]);
+        printf("\n");
+    }
 
     reset_p2p_stage_num(best_p2p_stage_num);
+
     return p2p_num_per_butterfly_stage;
 }

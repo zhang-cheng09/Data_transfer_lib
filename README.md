@@ -1,4 +1,4 @@
-This is the document of the adptive data trnasfer library for model coupling.
+This is the document of the adptive data trnasfer library 1.0 for model coupling.
 If you have some problems, please contant Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn.
 
 The APIs of the library are written in Fortran because most couplers and models are programmed 

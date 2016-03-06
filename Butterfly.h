@@ -1,3 +1,11 @@
+
+/***************************************************************************
+ * This is a source file of the Adaptive Data Transfer Library version 1.0
+ * This file was initially finished by Cheng Zhang
+ * If you have any problem,
+ * please contact Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn
+ **************************************************************************/
+
 #ifndef BUTTERFLY_H
 #define BUTTERFLY_H
 #include "mpi.h"
@@ -12,6 +20,12 @@ using namespace std;
 class Butterfly
 {
 private:
+    double best_timer;
+    MPI_Comm intra_comm;
+    bool profiling;
+    bool * stage_mask;
+    int current_stage;
+
     MPI_Comm global_comm;
     MPI_Comm local_comm;
     int * send_cells;

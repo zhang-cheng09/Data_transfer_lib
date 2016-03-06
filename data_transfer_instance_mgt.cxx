@@ -1,3 +1,11 @@
+
+/***************************************************************************
+ * This is a source file of the Adaptive Data Transfer Library version 1.0
+ * This file was initially finished by Cheng Zhang
+ * If you have any problem,
+ * please contact Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn
+ **************************************************************************/
+
 #include "data_transfer_instance_mgt.h"
 #include <cstring>
 
@@ -476,99 +484,48 @@ void Data_transfer_instance::build_2D_self_router()
     
     int * num_remap_cells_each_remote_proc = new int[remote_model_size];
     int ** remap_cells_index_each_remote_proc = new int *[remote_model_size];
-     
+    int * remap_cells_displs = new int[remote_model_size];
+    int * remap_cells_index_buffer;
+    
+    MPI_Allgather(&num_remap_local_cells, 1, MPI_INT, num_remap_cells_each_remote_proc, 1, MPI_INT, local_comm);
+    remap_cells_displs[0] = 0;
+    for(int i=1; i<remote_model_size; i++)
+        remap_cells_displs[i] = remap_cells_displs[i-1] + num_remap_cells_each_remote_proc[i-1];
+    remap_cells_index_buffer = new int[remap_cells_displs[remote_model_size-1] + num_remap_cells_each_remote_proc[remote_model_size-1]];
+    MPI_Allgatherv(local_remap_cells_global_index, num_remap_local_cells, MPI_INT, remap_cells_index_buffer, num_remap_cells_each_remote_proc, remap_cells_displs, MPI_INT, local_comm);
     for(int i=0; i<remote_model_size; i++)
-    {
-        if(global_rank < remote_procs_global_rank[i])
-        {
-            MPI_Send(&num_remap_local_cells, 1, MPI_INT, remote_procs_global_rank[i], 3000+remote_procs_global_rank[i], MPI_COMM_WORLD);
-            MPI_Recv(num_remap_cells_each_remote_proc+i, 1, MPI_INT, remote_procs_global_rank[i], 4000+global_rank, MPI_COMM_WORLD, &status);
-        }
-        else if(global_rank > remote_procs_global_rank[i])
-        {
-            MPI_Recv(num_remap_cells_each_remote_proc+i, 1, MPI_INT, remote_procs_global_rank[i], 3000+global_rank, MPI_COMM_WORLD, &status);
-            MPI_Send(&num_remap_local_cells, 1, MPI_INT, remote_procs_global_rank[i], 4000+remote_procs_global_rank[i], MPI_COMM_WORLD);
-        }
-        else{
-            num_remap_cells_each_remote_proc[i] = num_remap_local_cells;
-        }
-    }
+        remap_cells_index_each_remote_proc[i] = remap_cells_index_buffer + remap_cells_displs[i];
 
-    for(int i=0; i<remote_model_size; i++)
-    {
-        if(num_remap_cells_each_remote_proc[i] > 0) remap_cells_index_each_remote_proc[i] = new int[num_remap_cells_each_remote_proc[i]];
-        else remap_cells_index_each_remote_proc[i] = NULL;
-
-        if(global_rank < remote_procs_global_rank[i])
-        {
-            MPI_Send(local_remap_cells_global_index, num_remap_local_cells, MPI_INT, remote_procs_global_rank[i], 3000+remote_procs_global_rank[i], MPI_COMM_WORLD);
-            MPI_Recv(remap_cells_index_each_remote_proc[i], num_remap_cells_each_remote_proc[i], MPI_INT, remote_procs_global_rank[i], 3000+global_rank, MPI_COMM_WORLD, &status);
-        }
-        else if(global_rank > remote_procs_global_rank[i])
-        {
-            MPI_Recv(remap_cells_index_each_remote_proc[i], num_remap_cells_each_remote_proc[i], MPI_INT, remote_procs_global_rank[i], 3000+global_rank, MPI_COMM_WORLD, &status);
-            MPI_Send(local_remap_cells_global_index, num_remap_local_cells, MPI_INT, remote_procs_global_rank[i], 3000+remote_procs_global_rank[i], MPI_COMM_WORLD);
-        }
-        else
-            memcpy(remap_cells_index_each_remote_proc[i], local_remap_cells_global_index, num_remap_local_cells*sizeof(int));
-    }
-
+ 
     if(num_local_cells > 0)
         for(int i=0; i<remote_model_size; i++)
             compute_routing_info_between_decomps(num_remap_cells_each_remote_proc[i], remap_cells_index_each_remote_proc[i], i);
     
-    for(int i=0; i<remote_model_size; i++)
-        if(remap_cells_index_each_remote_proc[i] != NULL)
-            delete [] remap_cells_index_each_remote_proc[i];
+    delete [] remap_cells_displs;
+    delete [] remap_cells_index_buffer;
     delete [] remap_cells_index_each_remote_proc;
     delete [] num_remap_cells_each_remote_proc;
     
     int * num_cells_each_remote_proc = new int[remote_model_size];
     int ** cells_index_each_remote_proc = new int *[remote_model_size];
+    int * local_cells_displs = new int[remote_model_size];
+    int * local_cells_index_buffer;
+    
+    MPI_Allgather(&num_local_cells, 1, MPI_INT, num_cells_each_remote_proc, 1, MPI_INT, local_comm);
+    local_cells_displs[0] = 0;
+    for(int i=1; i<remote_model_size; i++)
+        local_cells_displs[i] = local_cells_displs[i-1] + num_cells_each_remote_proc[i-1];
+    local_cells_index_buffer = new int[local_cells_displs[remote_model_size-1] + num_cells_each_remote_proc[remote_model_size-1]];
+    MPI_Allgatherv(local_cells_global_index, num_local_cells, MPI_INT, local_cells_index_buffer, num_cells_each_remote_proc, local_cells_displs, MPI_INT, local_comm);
+    for(int i=0; i<remote_model_size; i++)
+        cells_index_each_remote_proc[i] = local_cells_index_buffer + local_cells_displs[i];
       
-    for(int i=0; i<remote_model_size; i++)
-    {
-        if(global_rank < remote_procs_global_rank[i])
-        {
-            MPI_Send(&num_local_cells, 1, MPI_INT, remote_procs_global_rank[i], 3000+remote_procs_global_rank[i], MPI_COMM_WORLD);
-            MPI_Recv(num_cells_each_remote_proc+i, 1, MPI_INT, remote_procs_global_rank[i], 4000+global_rank, MPI_COMM_WORLD, &status);
-        }
-        else if(global_rank > remote_procs_global_rank[i])
-        {
-            MPI_Recv(num_cells_each_remote_proc+i, 1, MPI_INT, remote_procs_global_rank[i], 3000+global_rank, MPI_COMM_WORLD, &status);
-            MPI_Send(&num_local_cells, 1, MPI_INT, remote_procs_global_rank[i], 4000+remote_procs_global_rank[i], MPI_COMM_WORLD);
-        }
-        else{
-            num_cells_each_remote_proc[i] = num_local_cells;
-        }
-    }
-
-    for(int i=0; i<remote_model_size; i++)
-    {
-        if(num_cells_each_remote_proc[i] > 0) cells_index_each_remote_proc[i] = new int[num_cells_each_remote_proc[i]];
-        else cells_index_each_remote_proc[i] = NULL;
-
-        if(global_rank < remote_procs_global_rank[i])
-        {
-            MPI_Send(local_cells_global_index, num_local_cells, MPI_INT, remote_procs_global_rank[i], 3000+remote_procs_global_rank[i], MPI_COMM_WORLD);
-            MPI_Recv(cells_index_each_remote_proc[i], num_cells_each_remote_proc[i], MPI_INT, remote_procs_global_rank[i], 3000+global_rank, MPI_COMM_WORLD, &status);
-        }
-        else if(global_rank > remote_procs_global_rank[i])
-        {
-            MPI_Recv(cells_index_each_remote_proc[i], num_cells_each_remote_proc[i], MPI_INT, remote_procs_global_rank[i], 3000+global_rank, MPI_COMM_WORLD, &status);
-            MPI_Send(local_cells_global_index, num_local_cells, MPI_INT, remote_procs_global_rank[i], 3000+remote_procs_global_rank[i], MPI_COMM_WORLD);
-        }
-        else
-            memcpy(cells_index_each_remote_proc[i], local_cells_global_index, num_local_cells*sizeof(int));
-    }
-
     if(num_remap_local_cells > 0)
         for(int i=0; i<remote_model_size; i++)
             compute_remap_routing_info_between_decomps(num_cells_each_remote_proc[i], cells_index_each_remote_proc[i], i);
     
-    for(int i=0; i<remote_model_size; i++)
-        if(cells_index_each_remote_proc[i] != NULL)
-            delete [] cells_index_each_remote_proc[i];
+    delete [] local_cells_displs;
+    delete [] local_cells_index_buffer;
     delete [] cells_index_each_remote_proc;
     delete [] num_cells_each_remote_proc;
 }
@@ -739,7 +696,7 @@ bool Data_transfer_instance_mgt::init_data_transfer_instance(int instance_id)
     if(instance_id >= data_transfer_instance_mgt.size()) return false;
     else{ 
         data_transfer_instance_mgt[instance_id]->init();
-        data_transfer_instance_mgt[instance_id]->auto_set_p2p_stage_num();
+        //data_transfer_instance_mgt[instance_id]->auto_set_p2p_stage_num();
         return true;
     }
 }
