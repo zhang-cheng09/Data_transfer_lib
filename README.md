@@ -34,21 +34,39 @@ in Fortran, although the source code is mainly written in C++.
 Here is an example to implement data transfer with the adaptive data trasfer library
 
 Program X_model
+
     use data_transfer_library_mod
+
     implicit none 
+    
     integer :: instance_id, decomp_id, end_step
+    
     integer :: local_comm, remote_root_global_rank, direction
+    
     integer :: num_grid_cells, num_local_cells, local_cells_global_index(:)
+    
     logical :: mask_array(:), input
+    
     real :: send_buf1(:,:), send_buf2(:,:,:)
+
     instance_id = data_transfer_register_instance(local_comm, remote_root_global_rank, direction)
+    
     call data_transfer_register_decomp(instance_id, num_grid_cells, num_local_cells, local_cells_global_index)
+    
     call data_transfer_register_field(instance_id, send_buf1, input)
+    
     call data_transfer_register_field(instance_id, send_buf2, input)
+    
     call data_transfer_register_mask(instance_id, mask_array)
+    
     call data_transfer_init_instance(instance_id)
+    
     do i=1, end_step
+    
         call data_transfer_exec_instance(instance_id)
+    
     end do
+    
     call data_transfer_final_instance(instance_id)
+
 End program X_model 
